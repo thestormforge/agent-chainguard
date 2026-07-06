@@ -1,0 +1,23 @@
+# Chainguard image overrides for the v2 `stormforge-agent` Helm chart.
+# (The v2 applier is a separate chart and image — see
+# chainguard-values-v2-applier.yaml.)
+#
+# Add this on top of your usual stormforge-agent install values:
+#
+#   helm install ... -f my-values.yaml -f chainguard-values-v2-agent.yaml
+#
+# Only the repository is overridden. The packaged chart pins the image tag to
+# the release it was tested with, and the Chainguard images are published
+# tag-for-tag with upstream, so the correct version resolves automatically.
+workload:
+  image:
+    repository: ghcr.io/thestormforge/agent-chainguard/workload-agent
+
+# Third-party Prometheus (the metrics forwarder) is NOT overridden here.
+#
+# If you standardise on Chainguard, point the forwarder at your own Chainguard
+# Prometheus via prom.image.repository / prom.image.tag. Two things to note:
+#   - match the Prometheus version to the chart's default prom.image.tag
+#   - use a SHELLED Prometheus variant: the forwarder's init container runs
+#     /bin/sh + sed (using the Prometheus image) to template its config, so a
+#     distroless/shell-less image fails to start with "sh: not found".

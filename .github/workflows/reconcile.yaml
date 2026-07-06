@@ -1,0 +1,147 @@
+name: Backfill pre-3.0 Chainguard images (one-off)
+
+# One-off, idempotent backfill for pre-3.0 (v2) StormForge.
+#
+# Discovers the upstream agent + applier versions, filters to 2.x at or above a
+# floor version, skips any already built, and rebases the rest onto a Chainguard
+# base — tagged to match the upstream version. Safe to re-run: it only builds
+# what is missing.
+#
+# Manual only. Intended to be run once (v2 is not expected to receive new
+# releases); re-run if the floor is widened or a stray 2.x release appears.
+# NOTE: the agent and applier version independently (agent 2.2x.x, applier
+# 2.1x.x), so each stream has its own floor input.
+on:
+  workflow_dispatch:
+    inputs:
+      agent_min_version:
+        description: "Lowest workload-agent 2.x version to build (inclusive)"
+        required: false
+        default: "2.20.0"
+      applier_min_version:
+        description: "Lowest applier 2.x version to build (inclusive)"
+        required: false
+        default: "2.10.0"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GHCR_NS: ghcr.io/thestormforge/agent-chainguard
+
+jobs:
+  discover:
+    name: Discover missing versions
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - name: Install crane
+        run: |
+          curl -sL https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz -o /tmp/gcr.tgz
+          tar -xzf /tmp/gcr.tgz -C /tmp crane
+          sudo mv /tmp/crane /usr/local/bin/crane
+
+      # crane needs to LIST the source registry and CHECK GHCR for existing tags.
+      # If registry.stormforge.io allows anonymous list/pull, the source login
+      # can be removed.
+      - name: Registry auth
+        env:
+          SF_USER: ${{ secrets.STORMFORGE_REGISTRY_USERNAME }}
+          SF_PASS: ${{ secrets.STORMFORGE_REGISTRY_PASSWORD }}
+        run: |
+          crane auth login ghcr.io -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}"
+          if [ -n "$SF_USER" ]; then
+            crane auth login registry.stormforge.io -u "$SF_USER" -p "$SF_PASS"
+          fi
+
+      - name: Plan builds
+        id: plan
+        env:
+          MIN_AGENT: ${{ inputs.agent_min_version }}
+          MIN_APPLIER: ${{ inputs.applier_min_version }}
+        run: |
+          set -euo pipefail
+          # key | source repo | dst repo | build context | build-arg name | floor
+          STREAMS=(
+            "workload-agent|registry.stormforge.io/optimize/workload-agent|${GHCR_NS}/workload-agent|images/workload-agent|AGENT_TAG|${MIN_AGENT}"
+            "applier|registry.stormforge.io/optimize/applier|${GHCR_NS}/applier|images/applier|APPLIER_TAG|${MIN_APPLIER}"
+          )
+
+          items="[]"
+          for s in "${STREAMS[@]}"; do
+            IFS='|' read -r key src dst ctx arg MIN <<<"$s"
+            echo "::group::$key ($src)"
+            if ! tags=$(crane ls "$src"); then
+              echo "::error::Failed to list tags for $src (check credentials / registry access)"
+              exit 1
+            fi
+            for tag in $tags; do
+              case "$tag" in 2.*) : ;; *) continue ;; esac      # 2.x only
+              case "$tag" in *-*) continue ;; esac              # skip pre-releases/snapshots
+              # floor: keep only tags >= MIN
+              [ "$(printf '%s\n%s\n' "$MIN" "$tag" | sort -V | head -1)" = "$MIN" ] || continue
+              # idempotency: skip if already published
+              if crane digest "$dst:$tag" >/dev/null 2>&1; then
+                echo "skip $tag (already exists)"; continue
+              fi
+              echo "build $tag"
+              items=$(echo "$items" | jq --arg c "$ctx" --arg a "$arg" --arg d "$dst" --arg t "$tag" \
+                '. += [{context:$c, build_arg:$a, dst:$d, tag:$t}]')
+            done
+            echo "::endgroup::"
+          done
+
+          echo "count=$(echo "$items" | jq 'length')" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(echo "$items" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.dst }}:${{ matrix.tag }}
+    needs: discover
+    if: needs.discover.outputs.count != '0'
+    runs-on: ubuntu-latest
+    env:
+      SF_USER: ${{ secrets.STORMFORGE_REGISTRY_USERNAME }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Needed so buildx can pull the FROM image. Remove if the source registry
+      # allows anonymous pulls.
+      - name: Log in to source registry
+        if: env.SF_USER != ''
+        uses: docker/login-action@v3
+        with:
+          registry: registry.stormforge.io
+          username: ${{ secrets.STORMFORGE_REGISTRY_USERNAME }}
+          password: ${{ secrets.STORMFORGE_REGISTRY_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            ${{ matrix.build_arg }}=${{ matrix.tag }}
+          tags: |
+            ${{ matrix.dst }}:${{ matrix.tag }}

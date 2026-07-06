@@ -1,0 +1,13 @@
+# Chainguard image overrides for the v2 `stormforge-applier` Helm chart.
+# (The v2 agent is a separate chart and image — see
+# chainguard-values-v2-agent.yaml.)
+#
+# Add this on top of your usual stormforge-applier install values:
+#
+#   helm install ... -f my-values.yaml -f chainguard-values-v2-applier.yaml
+#
+# Only the repository is overridden. The packaged chart pins the image tag to
+# the release it was tested with, and the Chainguard images are published
+# tag-for-tag with upstream, so the correct version resolves automatically.
+image:
+  repository: ghcr.io/thestormforge/agent-chainguard/applier

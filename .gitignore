@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local env / secrets — never commit credentials
+.env
+.env.*
+*.local
+
+# Local test scratch
+*.log
+tmp/
