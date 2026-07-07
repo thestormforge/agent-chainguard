@@ -22,17 +22,16 @@ upstream (e.g. `.../applier:2.15.2` rebases
 ## Using the images
 
 v2 installs the agent and applier as two separate charts — **agent first, then
-applier**. Override each chart's image **repository**:
+applier**. Add an image **repository** override to your normal install for each
+chart (keeping your usual cluster name, credentials, and other values):
 
 ```sh
 # agent
 helm install stormforge-agent oci://registry.stormforge.io/library/stormforge-agent \
-  -f my-values.yaml \
   --set workload.image.repository=ghcr.io/thestormforge/agent-chainguard/workload-agent
 
 # applier
 helm install stormforge-applier oci://registry.stormforge.io/library/stormforge-applier \
-  -f my-values.yaml \
   --set image.repository=ghcr.io/thestormforge/agent-chainguard/applier
 ```
 
