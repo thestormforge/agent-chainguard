@@ -1,14 +1,14 @@
-name: Backfill pre-3.0 Chainguard images (one-off)
+name: Build and backfill Chainguard images (pre-3.0)
 
-# One-off, idempotent backfill for pre-3.0 (v2) StormForge.
+# Idempotent build/backfill for pre-3.0 (v2) StormForge.
 #
 # Discovers the upstream agent + applier versions, filters to 2.x at or above a
 # floor version, skips any already built, and rebases the rest onto a Chainguard
 # base — tagged to match the upstream version. Safe to re-run: it only builds
 # what is missing.
 #
-# Manual only. Intended to be run once (v2 is not expected to receive new
-# releases); re-run if the floor is widened or a stray 2.x release appears.
+# Manual only. Re-run it after new 2.x releases (to build the new version), or
+# with a lower floor (to cover older versions).
 # NOTE: the agent and applier version independently (agent 2.2x.x, applier
 # 2.1x.x), so each stream has its own floor input.
 on:
