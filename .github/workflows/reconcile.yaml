@@ -22,6 +22,8 @@ on:
         description: "Lowest applier 2.x version to build (inclusive)"
         required: false
         default: "2.10.0"
+  schedule:
+    - cron: '17 3 * * 1-5'  # 03:17 UTC, weekdays only
 
 permissions:
   contents: read
@@ -60,8 +62,8 @@ jobs:
       - name: Plan builds
         id: plan
         env:
-          MIN_AGENT: ${{ inputs.agent_min_version }}
-          MIN_APPLIER: ${{ inputs.applier_min_version }}
+          MIN_AGENT: ${{ inputs.agent_min_version || '2.28.2' }}
+          MIN_APPLIER: ${{ inputs.applier_min_version || '2.15.2' }}
         run: |
           set -euo pipefail
           # key | source repo | dst repo | build context | build-arg name | floor
