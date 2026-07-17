@@ -1,0 +1,33 @@
+# Chainguard image overrides for the 3.0 `stormforge` Helm chart.
+# (Unlike v2, the 3.0 chart is a single chart where one workload-agent image
+# backs BOTH the agent and applier components — so both point at the same image,
+# and there is no separate applier image.)
+#
+# Add this on top of your usual stormforge install values:
+#
+#   helm install ... -f my-values.yaml -f chainguard-values-v3.yaml
+#
+# Only the repository is overridden. The packaged chart pins the image tag to
+# the release it was tested with, and the Chainguard images are published
+# tag-for-tag with upstream, so the correct version resolves automatically.
+agent:
+  image:
+    repository: ghcr.io/thestormforge/agent-chainguard/workload-agent
+
+applier:
+  image:
+    repository: ghcr.io/thestormforge/agent-chainguard/workload-agent
+
+# Third-party Prometheus (the exporter) is NOT overridden here.
+#
+# If you standardise on Chainguard, point the exporter at your own Chainguard
+# Prometheus via exporter.image.repository / exporter.image.tag. Three things
+# to note:
+#   - match the Prometheus version to the chart's default exporter.image.tag
+#   - use a SHELLED Prometheus variant: the exporter's init container runs
+#     /bin/sh + sed (using the Prometheus image) to template its config, so a
+#     distroless/shell-less image fails to start with "sh: not found".
+#   - set WORKDIR /prometheus on the image, or Prometheus fails with
+#     "mkdir /data-agent: permission denied" (the chart relies on the default
+#     relative storage path resolving under /prometheus). Wrap the Chainguard
+#     image with a two-line Dockerfile that adds `WORKDIR /prometheus`.

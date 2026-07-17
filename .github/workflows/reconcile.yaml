@@ -1,16 +1,19 @@
-name: Build and backfill Chainguard images (pre-3.0)
+name: Build and backfill Chainguard images
 
-# Idempotent build/backfill for pre-3.0 (v2) StormForge.
+# Idempotent build/backfill for StormForge Chainguard images (v2 and 3.0).
 #
-# Discovers the upstream agent + applier versions, filters to 2.x at or above a
-# floor version, skips any already built, and rebases the rest onto a Chainguard
-# base — tagged to match the upstream version. Safe to re-run: it only builds
-# what is missing.
+# Discovers the upstream versions per stream, filters to that stream's major at
+# or above a floor version, skips any already built, and rebases the rest onto a
+# Chainguard base — tagged to match the upstream version. Safe to re-run: it
+# only builds what is missing.
 #
-# Manual only. Re-run it after new 2.x releases (to build the new version), or
-# with a lower floor (to cover older versions).
-# NOTE: the agent and applier version independently (agent 2.2x.x, applier
-# 2.1x.x), so each stream has its own floor input.
+# Streams:
+#   - workload-agent 2.x  (v2 agent image)
+#   - applier 2.x         (v2 applier image; 3.0 has no separate applier)
+#   - workload-agent 3.x  (3.0 combined image; backs both agent and applier)
+#
+# Runs on a weekday schedule and on demand. Re-run after new releases, or with a
+# lower floor to cover older versions. Each stream has its own floor input.
 on:
   workflow_dispatch:
     inputs:
@@ -66,22 +69,26 @@ jobs:
           MIN_APPLIER: ${{ inputs.applier_min_version || '2.15.2' }}
         run: |
           set -euo pipefail
-          # key | source repo | dst repo | build context | build-arg name | floor
+          # key | source repo | dst repo | build context | build-arg name | floor | major prefix
+          # The 3.0 workload-agent image is the same source repo as v2, just 3.x
+          # tags; the applier image is v2-only (3.0 has no separate applier).
+          # 3.x starts at 3.0.0, so its floor is fixed (no input needed).
           STREAMS=(
-            "workload-agent|registry.stormforge.io/optimize/workload-agent|${GHCR_NS}/workload-agent|images/workload-agent|AGENT_TAG|${MIN_AGENT}"
-            "applier|registry.stormforge.io/optimize/applier|${GHCR_NS}/applier|images/applier|APPLIER_TAG|${MIN_APPLIER}"
+            "workload-agent-v2|registry.stormforge.io/optimize/workload-agent|${GHCR_NS}/workload-agent|images/workload-agent|AGENT_TAG|${MIN_AGENT}|2."
+            "applier-v2|registry.stormforge.io/optimize/applier|${GHCR_NS}/applier|images/applier|APPLIER_TAG|${MIN_APPLIER}|2."
+            "workload-agent-v3|registry.stormforge.io/optimize/workload-agent|${GHCR_NS}/workload-agent|images/workload-agent|AGENT_TAG|3.0.0|3."
           )
 
           items="[]"
           for s in "${STREAMS[@]}"; do
-            IFS='|' read -r key src dst ctx arg MIN <<<"$s"
+            IFS='|' read -r key src dst ctx arg MIN prefix <<<"$s"
             echo "::group::$key ($src)"
             if ! tags=$(crane ls "$src"); then
               echo "::error::Failed to list tags for $src (check credentials / registry access)"
               exit 1
             fi
             for tag in $tags; do
-              case "$tag" in 2.*) : ;; *) continue ;; esac      # 2.x only
+              case "$tag" in ${prefix}*) : ;; *) continue ;; esac  # this stream's major only
               case "$tag" in *-*) continue ;; esac              # skip pre-releases/snapshots
               # floor: keep only tags >= MIN
               [ "$(printf '%s\n%s\n' "$MIN" "$tag" | sort -V | head -1)" = "$MIN" ] || continue

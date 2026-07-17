@@ -9,36 +9,46 @@ this repository, not customers (see [README](README.md) for using the images).
 images/
   workload-agent/Dockerfile         # rebases the agent binary (build-arg AGENT_TAG)
   applier/Dockerfile                # rebases the applier binary (build-arg APPLIER_TAG)
-chainguard-values-v2-agent.yaml     # example overrides for the stormforge-agent chart
-chainguard-values-v2-applier.yaml   # example overrides for the stormforge-applier chart
+chainguard-values-v2-agent.yaml     # example overrides for the v2 stormforge-agent chart
+chainguard-values-v2-applier.yaml   # example overrides for the v2 stormforge-applier chart
+chainguard-values-v3.yaml           # example overrides for the 3.0 stormforge chart
 .github/workflows/reconcile.yaml    # builds / backfills the Chainguard images
 ```
 
 ## Building locally
 
 ```sh
-docker build --build-arg AGENT_TAG=2.28.2 -t workload-agent:dev images/workload-agent
+# workload-agent (same Dockerfile for v2 and 3.0 — only the tag differs)
+docker build --build-arg AGENT_TAG=2.28.2 -t workload-agent:v2 images/workload-agent
+docker build --build-arg AGENT_TAG=3.0.0  -t workload-agent:v3 images/workload-agent
+# applier (v2 only)
 docker build --build-arg APPLIER_TAG=2.15.2 -t applier:dev images/applier
 ```
 
 ## Publishing (reconcile)
 
 `reconcile.yaml` builds and publishes to `ghcr.io/thestormforge/agent-chainguard/*`.
-It is manual (`workflow_dispatch`) and can only be triggered by someone with
-write access — external users cannot run it. It:
+It runs on a schedule and on demand (`workflow_dispatch`), and can only be
+triggered by someone with write access — external users cannot run it.
 
-- lists the upstream 2.x tags of both images (the agent and applier version
-  independently),
-- keeps tags at/above the per-stream floor inputs, skipping pre-releases,
-- skips anything already published, and builds the rest.
+It builds three streams:
+
+- **workload-agent 2.x** and **applier 2.x** (v2 — the agent and applier version
+  independently, each with its own floor input),
+- **workload-agent 3.x** (3.0 — same image and Dockerfile, 3.x tags; its floor is
+  fixed at 3.0.0, so no input).
+
+For each stream it lists the upstream tags, keeps the ones at/above the stream's
+floor (skipping pre-releases), skips anything already published, and builds the
+rest.
 
 It is idempotent — safe to re-run. Two operational points:
 
 - **When requested**, backfill down to the lowest chart version you intend to
   support, so a customer's repository-only override resolves for every supported
   version.
-- **After a new 2.x release**, re-run it so upgrades (whose image tag follows the
-  new chart version) resolve to a published image.
+- **After a new release** (2.x or 3.x), re-run it so upgrades (whose image tag
+  follows the new chart version) resolve to a published image.
 
 It needs list/pull access to `registry.stormforge.io` via registry pull
 credentials configured as repository secrets (unless that registry allows
