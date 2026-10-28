@@ -1,0 +1,13 @@
+# Chainguard image overrides for the 3.0 `stormforge` Helm chart.
+# 3.0 has only the agent and applier (no separate webhook or node-agent), both on
+# the one workload-agent image. Its Prometheus key is `exporter.image`; see
+# chainguard-values-v3.yaml for the Prometheus notes.
+#
+#   helm install ... -f my-values.yaml -f chainguard-values-v3.0.yaml
+agent:
+  image:
+    repository: ghcr.io/thestormforge/agent-chainguard/workload-agent
+
+applier:
+  image:
+    repository: ghcr.io/thestormforge/agent-chainguard/workload-agent

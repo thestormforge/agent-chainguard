@@ -10,7 +10,8 @@ name: Build and backfill Chainguard images
 # Streams:
 #   - workload-agent 2.x  (v2 agent image)
 #   - applier 2.x         (v2 applier image; 3.0 has no separate applier)
-#   - workload-agent 3.x  (3.0 combined image; backs both agent and applier)
+#   - workload-agent 3.x  (3.x combined image; backs the agent, applier and webhook)
+#   - stormforge-node-agent 3.x (3.1+ GPU DaemonSet; separate cgo image, amd64 only)
 #
 # Runs on a weekday schedule and on demand. Re-run after new releases, or with a
 # lower floor to cover older versions. Each stream has its own floor input.
@@ -69,19 +70,21 @@ jobs:
           MIN_APPLIER: ${{ inputs.applier_min_version || '2.15.2' }}
         run: |
           set -euo pipefail
-          # key | source repo | dst repo | build context | build-arg name | floor | major prefix
+          # key | source repo | dst repo | build context | build-arg name | floor | major prefix | platforms
           # The 3.0 workload-agent image is the same source repo as v2, just 3.x
           # tags; the applier image is v2-only (3.0 has no separate applier).
-          # 3.x starts at 3.0.0, so its floor is fixed (no input needed).
+          # 3.x starts at 3.0.0, so its floor is fixed (no input needed). The
+          # node-agent first shipped in 3.1.0 and is published for amd64 only.
           STREAMS=(
-            "workload-agent-v2|registry.stormforge.io/optimize/workload-agent|${GHCR_NS}/workload-agent|images/workload-agent|AGENT_TAG|${MIN_AGENT}|2."
-            "applier-v2|registry.stormforge.io/optimize/applier|${GHCR_NS}/applier|images/applier|APPLIER_TAG|${MIN_APPLIER}|2."
-            "workload-agent-v3|registry.stormforge.io/optimize/workload-agent|${GHCR_NS}/workload-agent|images/workload-agent|AGENT_TAG|3.0.0|3."
+            "workload-agent-v2|registry.stormforge.io/optimize/workload-agent|${GHCR_NS}/workload-agent|images/workload-agent|AGENT_TAG|${MIN_AGENT}|2.|linux/amd64,linux/arm64"
+            "applier-v2|registry.stormforge.io/optimize/applier|${GHCR_NS}/applier|images/applier|APPLIER_TAG|${MIN_APPLIER}|2.|linux/amd64,linux/arm64"
+            "workload-agent-v3|registry.stormforge.io/optimize/workload-agent|${GHCR_NS}/workload-agent|images/workload-agent|AGENT_TAG|3.0.0|3.|linux/amd64,linux/arm64"
+            "node-agent-v3|registry.stormforge.io/optimize/stormforge-node-agent|${GHCR_NS}/stormforge-node-agent|images/node-agent|NODE_AGENT_TAG|3.1.0|3.|linux/amd64"
           )
 
           items="[]"
           for s in "${STREAMS[@]}"; do
-            IFS='|' read -r key src dst ctx arg MIN prefix <<<"$s"
+            IFS='|' read -r key src dst ctx arg MIN prefix platforms <<<"$s"
             echo "::group::$key ($src)"
             if ! tags=$(crane ls "$src"); then
               echo "::error::Failed to list tags for $src (check credentials / registry access)"
@@ -97,8 +100,8 @@ jobs:
                 echo "skip $tag (already exists)"; continue
               fi
               echo "build $tag"
-              items=$(echo "$items" | jq --arg c "$ctx" --arg a "$arg" --arg d "$dst" --arg t "$tag" \
-                '. += [{context:$c, build_arg:$a, dst:$d, tag:$t}]')
+              items=$(echo "$items" | jq --arg c "$ctx" --arg a "$arg" --arg d "$dst" --arg t "$tag" --arg p "$platforms" \
+                '. += [{context:$c, build_arg:$a, dst:$d, tag:$t, platforms:$p}]')
             done
             echo "::endgroup::"
           done
@@ -148,7 +151,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platforms }}
           push: true
           build-args: |
             ${{ matrix.build_arg }}=${{ matrix.tag }}

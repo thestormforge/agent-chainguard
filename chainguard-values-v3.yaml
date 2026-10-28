@@ -1,7 +1,11 @@
-# Chainguard image overrides for the 3.0 `stormforge` Helm chart.
-# (Unlike v2, the 3.0 chart is a single chart where one workload-agent image
-# backs BOTH the agent and applier components — so both point at the same image,
-# and there is no separate applier image.)
+# Chainguard image overrides for the `stormforge` Helm chart, 3.4 and later.
+# (For older 3.x charts see chainguard-values-v3.1-3.3.yaml and
+# chainguard-values-v3.0.yaml: the component keys differ, and the chart's schema
+# rejects keys it doesn't know.)
+#
+# One workload-agent image backs the cluster agent, applier and webhook, so all
+# three point at it. The node-agent (only deployed with nodeAgent.enabled=true)
+# is a separate image.
 #
 # Add this on top of your usual stormforge install values:
 #
@@ -10,7 +14,7 @@
 # Only the repository is overridden. The packaged chart pins the image tag to
 # the release it was tested with, and the Chainguard images are published
 # tag-for-tag with upstream, so the correct version resolves automatically.
-agent:
+clusterAgent:
   image:
     repository: ghcr.io/thestormforge/agent-chainguard/workload-agent
 
@@ -18,13 +22,21 @@ applier:
   image:
     repository: ghcr.io/thestormforge/agent-chainguard/workload-agent
 
-# Third-party Prometheus (the exporter) is NOT overridden here.
+webhook:
+  image:
+    repository: ghcr.io/thestormforge/agent-chainguard/workload-agent
+
+nodeAgent:
+  image:
+    repository: ghcr.io/thestormforge/agent-chainguard/stormforge-node-agent
+
+# Third-party Prometheus (the forwarder) is NOT overridden here.
 #
-# If you standardise on Chainguard, point the exporter at your own Chainguard
-# Prometheus via exporter.image.repository / exporter.image.tag. Three things
+# If you standardise on Chainguard, point the forwarder at your own Chainguard
+# Prometheus via forwarder.image.repository / forwarder.image.tag. Three things
 # to note:
-#   - match the Prometheus version to the chart's default exporter.image.tag
-#   - use a SHELLED Prometheus variant: the exporter's init container runs
+#   - match the Prometheus version to the chart's default forwarder.image.tag
+#   - use a SHELLED Prometheus variant: the forwarder's init container runs
 #     /bin/sh + sed (using the Prometheus image) to template its config, so a
 #     distroless/shell-less image fails to start with "sh: not found".
 #   - set WORKDIR /prometheus on the image, or Prometheus fails with
