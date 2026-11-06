@@ -33,26 +33,11 @@ docker build --platform linux/amd64 --build-arg NODE_AGENT_TAG=3.4.0 -t node-age
 ## Publishing (reconcile)
 
 `reconcile.yaml` builds and publishes to `ghcr.io/thestormforge/agent-chainguard/*`.
-It can only be triggered by someone (or a token) with write access — external
-users cannot run it. It runs:
-
-- **On release**: the `release.yaml` workflows in `gramLabs/stormforge-agent`
-  (`main` and `v2` branches) and `gramLabs/stormforge-applier` dispatch it when
-  a non-pre-release is published,
-- **Weekly** (Mondays) as a backstop for a missed dispatch,
-- **On demand** (`workflow_dispatch`).
-
-The release workflows pass `wait_for`: one or more space-separated refs under
-`registry.stormforge.io` (for example, `optimize/workload-agent:2.28.9`).
-Released images reach that registry through a separate promote step, so the run
-polls for each ref for up to 30 minutes before planning, and fails if one never
-appears. Leave `wait_for` empty on manual runs.
-
-The dispatch crosses GitHub orgs (gramLabs to thestormforge). It uses the
-`SERVICES_PACKAGE_PAT` secret in each releasing repo, a PAT owned by the
-`grambot` machine user. grambot is an outside collaborator with **Write** on
-this repo; dispatching a workflow requires write access, so removing it (or
-lowering it to Read) stops the release triggers.
+It can only be triggered by someone with write access — external users cannot
+run it. It runs when a StormForge Agent or Applier release is published, daily
+as a backstop, and on demand (`workflow_dispatch`). Release-triggered runs pass
+`wait_for` so they wait (up to 30 minutes) for the released images to reach
+`registry.stormforge.io`; leave it empty on manual runs.
 
 It builds four streams:
 
@@ -72,9 +57,9 @@ It is idempotent — safe to re-run. Two operational points:
 - **When requested**, backfill down to the lowest chart version you intend to
   support, so a customer's repository-only override resolves for every supported
   version.
-- **After a new release** (2.x or 3.x), confirm the dispatched run succeeded so
+- **After a new release** (2.x or 3.x), check the triggered run succeeded so
   upgrades (whose image tag follows the new chart version) resolve to a
-  published image. Re-run it manually if it failed or timed out.
+  published image. Re-run it if not.
 
 It needs list/pull access to `registry.stormforge.io` via registry pull
 credentials configured as repository secrets (unless that registry allows

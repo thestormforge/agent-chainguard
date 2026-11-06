@@ -13,9 +13,8 @@ name: Build and backfill Chainguard images
 #   - workload-agent 3.x  (3.x combined image; backs the agent, applier and webhook)
 #   - stormforge-node-agent 3.x (3.1+ GPU DaemonSet; separate cgo image, amd64 only)
 #
-# Triggered by the release workflows in gramLabs/stormforge-agent (v2 and main)
-# and gramLabs/stormforge-applier, which pass `wait_for` so the run holds until
-# the released images are promoted to registry.stormforge.io. Also runs weekly
+# Triggered by Agent and Applier releases, which pass `wait_for` so the run
+# holds until the released images reach registry.stormforge.io. Also runs daily
 # as a backstop and on demand, for example with a lower floor to cover older
 # versions. Each 2.x stream has its own floor input.
 on:
@@ -34,7 +33,7 @@ on:
         required: false
         default: "2.10.0"
   schedule:
-    - cron: '17 3 * * 1'  # 03:17 UTC, Mondays; backstop for missed dispatches
+    - cron: '17 3 * * *'  # 03:17 UTC daily; backstop for missed dispatches
 
 # Agent and applier releases can land together; queue runs so they don't build
 # the same missing tags twice.
