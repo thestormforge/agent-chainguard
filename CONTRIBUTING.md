@@ -33,8 +33,11 @@ docker build --platform linux/amd64 --build-arg NODE_AGENT_TAG=3.4.0 -t node-age
 ## Publishing (reconcile)
 
 `reconcile.yaml` builds and publishes to `ghcr.io/thestormforge/agent-chainguard/*`.
-It runs on a schedule and on demand (`workflow_dispatch`), and can only be
-triggered by someone with write access — external users cannot run it.
+It can only be triggered by someone with write access — external users cannot
+run it. It runs when a StormForge Agent or Applier release is published, daily
+as a backstop, and on demand (`workflow_dispatch`). Release-triggered runs pass
+`wait_for` so they wait (up to 30 minutes) for the released images to reach
+`registry.stormforge.io`; leave it empty on manual runs.
 
 It builds four streams:
 
@@ -54,8 +57,9 @@ It is idempotent — safe to re-run. Two operational points:
 - **When requested**, backfill down to the lowest chart version you intend to
   support, so a customer's repository-only override resolves for every supported
   version.
-- **After a new release** (2.x or 3.x), re-run it so upgrades (whose image tag
-  follows the new chart version) resolve to a published image.
+- **After a new release** (2.x or 3.x), check the triggered run succeeded so
+  upgrades (whose image tag follows the new chart version) resolve to a
+  published image. Re-run it if not.
 
 It needs list/pull access to `registry.stormforge.io` via registry pull
 credentials configured as repository secrets (unless that registry allows

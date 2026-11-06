@@ -13,11 +13,17 @@ name: Build and backfill Chainguard images
 #   - workload-agent 3.x  (3.x combined image; backs the agent, applier and webhook)
 #   - stormforge-node-agent 3.x (3.1+ GPU DaemonSet; separate cgo image, amd64 only)
 #
-# Runs on a weekday schedule and on demand. Re-run after new releases, or with a
-# lower floor to cover older versions. Each stream has its own floor input.
+# Triggered by Agent and Applier releases, which pass `wait_for` so the run
+# holds until the released images reach registry.stormforge.io. Also runs daily
+# as a backstop and on demand, for example with a lower floor to cover older
+# versions. Each 2.x stream has its own floor input.
 on:
   workflow_dispatch:
     inputs:
+      wait_for:
+        description: "Space-separated source refs under registry.stormforge.io to wait for before planning (for example, optimize/workload-agent:2.28.9)"
+        required: false
+        default: ""
       agent_min_version:
         description: "Lowest workload-agent 2.x version to build (inclusive)"
         required: false
@@ -27,7 +33,13 @@ on:
         required: false
         default: "2.10.0"
   schedule:
-    - cron: '17 3 * * 1-5'  # 03:17 UTC, weekdays only
+    - cron: '17 3 * * *'  # 03:17 UTC daily; backstop for missed dispatches
+
+# Agent and applier releases can land together; queue runs so they don't build
+# the same missing tags twice.
+concurrency:
+  group: reconcile
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -62,6 +74,29 @@ jobs:
           if [ -n "$SF_USER" ]; then
             crane auth login registry.stormforge.io -u "$SF_USER" -p "$SF_PASS"
           fi
+
+      # Release workflows dispatch this run as soon as a release is published,
+      # but images reach registry.stormforge.io later via a separate promote
+      # step. Hold here until every requested ref exists, so the plan sees it.
+      - name: Wait for upstream images
+        if: inputs.wait_for != ''
+        env:
+          WAIT_FOR: ${{ inputs.wait_for }}
+          TIMEOUT_MINUTES: "30"
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
+          for ref in $WAIT_FOR; do
+            until crane digest "registry.stormforge.io/$ref" >/dev/null 2>&1; do
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::Timed out after ${TIMEOUT_MINUTES}m waiting for registry.stormforge.io/$ref"
+                exit 1
+              fi
+              echo "waiting for registry.stormforge.io/$ref"
+              sleep 60
+            done
+            echo "found registry.stormforge.io/$ref"
+          done
 
       - name: Plan builds
         id: plan
